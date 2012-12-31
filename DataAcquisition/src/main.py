@@ -7,6 +7,16 @@ import time
 import serial
 from datetime import datetime 
 
+class Configuration():
+
+	# 1: set a base directory to store the data, 
+	# !*!* include a trailing separator (slash) *!*!
+	baseDir = "/home/edwin/dataAcq/"
+
+	# 2: setup the channels array and the correlation functions in the ChannelClass
+
+	
+
 class ChannelClass():
 		
 	def __init__(self):
@@ -27,13 +37,13 @@ class IOStuff():
 		
 	def __init__(self):
 		# put a base file path here
-		baseDir = "/home/edwin/dataAcq"
+		baseDir = config.baseDir 
 		self.make_sure_path_exists(baseDir)
 		# get a filename
 		now = datetime.now()
 		date = now.strftime('%Y%m%d-%H%M%S')
 		sfile = "data-%s.csv" % date
-		self.outFile = open(baseDir + '/' + sfile, 'w')
+		self.outFile = open(baseDir + sfile, 'w')
 		
 	def make_sure_path_exists(self, path):
 		try:
@@ -49,7 +59,7 @@ class IOStuff():
 		for ch in channels.Channels:
 			s += "Processed%s," % ch[0]
 		self.outFile.write(s)
-		self.outFile.write("\n")
+		self.outFile.write("\n") # is this cross-platform?
 	
 	def issueReportString(self, times, raw, vals):
 		s_time = ",".join(times) 
@@ -57,7 +67,7 @@ class IOStuff():
 		s_vals = ",".join("%10.3f" % x for x in vals)
 		s = ",".join([s_time, s_raw, s_vals])
 		self.outFile.write(s)
-		self.outFile.write("\n")
+		self.outFile.write("\n") # is this cross platform?
 	
 class DataReader():
 		
@@ -73,7 +83,7 @@ class DataReader():
 		self.ser.open()
 				
 		# initialize a constant for convenience
-		iZeroChar = ord('0') # should be 48, but this looks a bit nicer
+		self.iZeroChar = ord('0') # should be 48, but this looks a bit nicer
 									
 	def DoOneIteration(self):
 
@@ -143,5 +153,6 @@ class MainDataLooper():
 			# then pause for a moment
 			time.sleep(0.25)
 
-# this is the module's executable code, start running the main program
-MainDataLooper.run()
+# this is the module's executable code, create the config instance and start running the main program
+config = Configuration()
+MainDataLooper().run()
