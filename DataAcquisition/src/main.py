@@ -11,12 +11,27 @@ class Configuration():
 
 	# 1: set a base directory to store the data, 
 	# !*!* include a trailing separator (slash) *!*!
-	baseDir = "/home/edwin/dataAcq/"
+	def baseDir(self):
+		return "/home/edwin/dataAcq/"
 
 	# 2: setup the channels array and the correlation functions in the ChannelClass
 
-	
-
+	# 3: define the time step, in seconds
+	def getTimeStep(self, currentTime):
+		if currentTime < 10:
+			return 0.25
+		elif currentTime < 30:
+			return 0.5
+		else:
+			return 1
+		
+	# 4: define the data acquisition flag (the time to stop taking data)
+	def getContinueFlag(self, currentTime):
+		if currentTime < 60:
+			return True
+		else:
+			return False
+		
 class ChannelClass():
 		
 	def __init__(self):
@@ -37,7 +52,7 @@ class IOStuff():
 		
 	def __init__(self):
 		# put a base file path here
-		baseDir = config.baseDir 
+		baseDir = config.baseDir()
 		self.make_sure_path_exists(baseDir)
 		# get a filename
 		now = datetime.now()
@@ -53,7 +68,7 @@ class IOStuff():
 				raise
 	
 	def issueHeaderString(self, channels):
-		s = "TimeStamp,SecondsSinceStarting,LogarithmSeconds,"
+		s = "ReadCount,TimeStamp,SecondsSinceStarting,LogarithmSeconds,"
 		for ch in channels.Channels:
 			s += "Raw%s," % ch[0]
 		for ch in channels.Channels:
@@ -134,24 +149,36 @@ class MainDataLooper():
 		# instantiate the reader, passing in the channel class instance
 		reader = DataReader(channels)
 		
-		# initialize the starting time
+		# initialize the looping flag
+		ContinueLooping = True
+				
+		# initialize the starting time 
 		startTime = time.time()
 		
+		# initialize the loop counter
+		readerCount = 0
+		
 		# infinite loop while we read and spew data
-		while True:	
-			print "Starting a new iteration"
-			# re-initialize the lists
+		while ContinueLooping:	
+			readerCount += 1
+			print "Starting a new iteration, count # " + str(readerCount)
+			# clear and integer count, timestamp, time-secs, log(time-secs)
 			times = []
-			# add current time and time since starting and log of seconds also
+			times.append(str(readerCount))
 			times.append(str(datetime.now()))
-			times.append(str(round(time.time() - startTime, 4)))
-			times.append(str(round(math.log(time.time() - startTime), 4)))
+			currentTime = time.time() - startTime
+			times.append(str(round(currentTime, 4)))
+			times.append(str(round(math.log(currentTime), 4)))
 			# get the raw and processed values
 			raw, vals = reader.DoOneIteration()
 			# create string representations for each list (times are already strings...no need to cast)
 			io.issueReportString(times, raw, vals)
+			# get a new time step value from the config routine
+			thisTimeStep = config.getTimeStep(currentTime)
 			# then pause for a moment
-			time.sleep(0.25)
+			time.sleep(thisTimeStep)
+			# finally check the flag
+			ContinueLooping = config.getContinueFlag(currentTime)
 
 # this is the module's executable code, create the config instance and start running the main program
 config = Configuration()
