@@ -16,8 +16,9 @@ class Configuration():
 
     # 1: set a base directory to store the data,
     # !*!* include a trailing separator (slash) *!*!
+    # the expanduser function is platform independent by itself, and gives the home dir
     def baseDir(self):
-        return "/home/edwin/dataAcq/"
+        return os.path.expanduser("~") + "/dataAcq/"
 
     # 2: setup the channels array and the correlation functions in the ChannelClass
 
