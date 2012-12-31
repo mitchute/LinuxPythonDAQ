@@ -59,7 +59,7 @@ class IOStuff():
 		self.outFile.write(s)
 		self.outFile.write("\n")
 	
-class MainReader():
+class DataReader():
 		
 	def __init__(self, channels):
 		
@@ -108,37 +108,40 @@ class MainReader():
 		# return whatever we got
 		return raw, values
 
-if __name__ == "__main__":
+class MainDataLooper():
 	
-	# instantiate the channel class, which will create the channels.Channels array
-	channels = ChannelClass()
+	def run(self):
 	
-	# instantiate the IO class, which will help with some formatting and file I/O operations
-	io = IOStuff()
-	
-	# spew the header
-	io.issueHeaderString(channels)
-	
-	# instantiate the reader, passing in the channel class instance
-	reader = MainReader(channels)
-	
-	# initialize the starting time
-	startTime = time.time()
-	
-	# infinite loop while we read and spew data
-	while True:	
-		print "Starting a new iteration"
-		# re-initialize the lists
-		times = []
-		# add current time and time since starting and log of seconds also
-		times.append(str(datetime.now()))
-		times.append(str(round(time.time() - startTime, 4)))
-		times.append(str(round(math.log(time.time() - startTime), 4)))
-		# get the raw and processed values
-		raw, vals = reader.DoOneIteration()
-		# create string representations for each list (times are already strings...no need to cast)
-		io.issueReportString(times, raw, vals)
-		# then pause for a moment
-		time.sleep(0.25)
-			
+		# instantiate the channel class, which will create the channels.Channels array
+		channels = ChannelClass()
 		
+		# instantiate the IO class, which will help with some formatting and file I/O operations
+		io = IOStuff()
+		
+		# spew the header
+		io.issueHeaderString(channels)
+		
+		# instantiate the reader, passing in the channel class instance
+		reader = DataReader(channels)
+		
+		# initialize the starting time
+		startTime = time.time()
+		
+		# infinite loop while we read and spew data
+		while True:	
+			print "Starting a new iteration"
+			# re-initialize the lists
+			times = []
+			# add current time and time since starting and log of seconds also
+			times.append(str(datetime.now()))
+			times.append(str(round(time.time() - startTime, 4)))
+			times.append(str(round(math.log(time.time() - startTime), 4)))
+			# get the raw and processed values
+			raw, vals = reader.DoOneIteration()
+			# create string representations for each list (times are already strings...no need to cast)
+			io.issueReportString(times, raw, vals)
+			# then pause for a moment
+			time.sleep(0.25)
+
+# this is the module's executable code, start running the main program
+MainDataLooper.run()
