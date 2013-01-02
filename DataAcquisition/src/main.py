@@ -1,16 +1,31 @@
 #!/usr/bin/python
 
+# import the gtk libraries, initialize the threads to alert that this will be multithreaded
 import gtk, gobject
 gtk.gdk.threads_init()
 
+# OS interaction library imports
 import sys
 import os
 import errno
+
+# generic math and date/time based library imports
 import math
 import time
-import serial
 from datetime import datetime
+
+# for serial communication, we import the python-serial library
+import serial
+
+# for background threading we need to import the threading library
 from threading import Thread
+
+# for graphical plot need to install python-matplotlib
+import matplotlib
+matplotlib.use('GtkAgg')
+from matplotlib.backends.backend_gtkagg import FigureCanvasGTKAgg as Canvas
+import pylab
+import cairo
 
 class Configuration():
 
@@ -45,6 +60,8 @@ class ChannelClass():
         # add any number of channels here
         self.Channels.append(["HXInletTemp", self.fTemperatureIn])
         self.Channels.append(["HXOutletTemp", self.fTemperatureOut])
+        self.Channels.append(["HXOutletTemp3", self.fTemperatureOut])
+        self.Channels.append(["HXOutletTemp4", self.fTemperatureOut])
 
     def fTemperatureIn(self, volts):
         # made up empirical correlation
@@ -182,8 +199,6 @@ class MainDataLooper():
             if self.forceStop:
                 break
             readerCount += 1
-            # send an update to the GUI callback
-            gobject.idle_add(self.guiCallbackFunction, readerCount)
             # clear and add integer count, timestamp, time-secs, log(time-secs)
             times = []
             times.append(str(readerCount))
@@ -193,6 +208,8 @@ class MainDataLooper():
             times.append(str(round(math.log(currentTime), 4)))
             # get the raw and processed values
             raw, vals = reader.DoOneIteration()
+            # send an update to the GUI callback
+            gobject.idle_add(self.guiCallbackFunction, readerCount, raw)
             # create string representations for each list (times are already strings...no need to cast)
             io.issueReportString(times, raw, vals)
             # get a new time step value from the config routine
@@ -204,7 +221,6 @@ class MainDataLooper():
 
         gobject.idle_add(self.allDoneCallbackFunction)
 
-# this is the main GUI for the program
 class GUI(gtk.Window):
 
     def __init__(self):
@@ -218,7 +234,6 @@ class GUI(gtk.Window):
 
         # show the form
         self.show_all()
-
 
     def initLayout(self):
 
@@ -248,6 +263,14 @@ class GUI(gtk.Window):
         hbox_read.pack_start(lblRead)
         hbox_read.pack_start(self.lblReadVal)
 
+        self.fig = matplotlib.pyplot.figure()
+        self.ax = self.fig.add_subplot(1,1,1)
+        self.canvas = Canvas(self.fig)
+        self.ax.plot([0],[0])
+        self.canvas.set_size_request(600,300)
+        hbox_plot = gtk.HBox(False, 0)
+        hbox_plot.pack_start(self.canvas)
+
         # form buttons
         self.btnRun = gtk.Button(label = "Start")
         self.btnRun.connect("clicked", self.onRun)
@@ -260,7 +283,7 @@ class GUI(gtk.Window):
         # vbox to hold everything
         vbox = gtk.VBox(spacing=6)
         vbox.pack_start(hbox_read, False, False, 0)
-        #vbox.pack_start(hbox_freq, False, False, 0)
+        vbox.pack_start(hbox_plot, False, False, 0)
         vbox.pack_start(hbox_btns, False, False, 0)
         self.add(vbox)
 
@@ -280,22 +303,26 @@ class GUI(gtk.Window):
         self.threadRunning = not self.threadRunning
 
     def onClose(self, widget):
-        self.DataAcquirer.forceStop = True
+        if hasattr(self, 'DataAcquirer'):
+            self.DataAcquirer.forceStop = True
         gtk.main_quit()
 
-    def updateForm(self, latestIter):
+    def updateForm(self, latestIter, rawVals):
         self.lblReadVal.set_label("Update count = %s" % latestIter)
+        self.ax.clear()
+        self.ax.plot(rawVals)
+        self.canvas.draw()
 
     def processIsComplete(self):
         print "All done"
         self.threadRunning = False
         self.btnRun.set_label('Start')
 
-# instantiate the configuration, this is where most of the project-specific changes will go
+# instantiate the configuration globally, this is where most of the project-specific changes will go
 config = Configuration()
 
-# instantiate the GUI, it handles pretty much everything
+# instantiate the GUI, it handles everything
 gui = GUI()
 
-# process the GUI
+# run
 gtk.main()
