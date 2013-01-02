@@ -173,9 +173,6 @@ class MainDataLooper():
 
     def run(self):
 
-        # instantiate the channel class, which will create the channels.Channels array
-        channels = ChannelClass()
-
         # instantiate the IO class, which will help with some formatting and file I/O operations
         io = IOStuff()
 
@@ -263,6 +260,21 @@ class GUI(gtk.Window):
         hbox_read.pack_start(lblRead)
         hbox_read.pack_start(self.lblReadVal)
 
+        # add snapshot reading outputs, a tree on the left and a plot on the right
+        self.liststore = gtk.ListStore(str, float)
+
+        # create the TreeView using liststore
+        self.treeview = gtk.TreeView(self.liststore)
+
+        # create the TreeViewColumns to display the data
+        self.tvcolumn = gtk.TreeViewColumn('Channel Name')
+        self.tvcolumn1 = gtk.TreeViewColumn('Current Value')
+
+        # setup a row for each channel
+        for ch in channels:
+            self.liststore.append([ch[0], -9999])
+
+
         self.fig = matplotlib.pyplot.figure()
         self.ax = self.fig.add_subplot(1,1,1)
         self.canvas = Canvas(self.fig)
@@ -320,6 +332,9 @@ class GUI(gtk.Window):
 
 # instantiate the configuration globally, this is where most of the project-specific changes will go
 config = Configuration()
+
+# instantiate the channel class, which will create the channels.Channels array
+channels = ChannelClass()
 
 # instantiate the GUI, it handles everything
 gui = GUI()
