@@ -56,6 +56,7 @@ class AChannel():
         self.volts = volts
         self.valueHistory.append(val)
 
+    #call this function anytime (like: for ch in config.channels.Channels: ch.Spew())
     def Spew(self):
         print "%s: (%s, %s, %s, %s)" % (self.name, self.timeHistory[-1], self.bits, self.volts, self.valueHistory[-1])
 
@@ -116,16 +117,44 @@ class Configuration():
     # 5: define the portName, could be COM1, or /dev/TTYUSO0, or otherwise
     portName = '/dev/ttyUSB0'
 
-    # 6: define the skip time at the beginning to avoid the strange initial results
-    warmupTime = 2 # seconds
-
-    # 7: define the resolution and scale of the digital converter, in mV/bit
+    # 6: define the resolution and scale of the digital converter, in mV/bit
     milliVoltsPerBit = 1
     minimumBits = 0
     maximumBits = 5000
 
     # for testing, you can enable this flag so it won't try to actually read data from the device
     testMode = False
+
+class AInfo():
+
+    def __init__(self, label, defaultvalue):
+        self.label = label
+        self.value = defaultvalue
+
+    def set_val(self, newval):
+        self.value = newval
+
+class InfoClass():
+
+    def __init__(self):
+        self.name = AInfo('Client Name:', 'Anonymous')
+        self.location = AInfo('Location:', 'Anywhere')
+        self.date = AInfo('Test Date:', 'Today I guess')
+        self.depth = AInfo('Borehole Depth:', 'Pretty Deep')
+        self.diameter = AInfo('Borehole Diameter', 'Pretty Wide')
+        self.loop = AInfo('Loop Description:', 'Loopy')
+        self.grout = AInfo('Grout Type:', 'Grouty')
+        self.cement = AInfo('Cement Seal Description:', 'Cementy')
+        self.swl = AInfo('SWL:', 'I dont even know')
+        self.tester = AInfo('Test Operator:', 'Me')
+        self.witness = AInfo('Witness:', 'This other guy')
+
+    def GetSummary(self):
+        summary = ''
+        for inf in [self.name, self.location, self.date, self.depth, self.diameter, self.loop,
+                    self.grout, self.cement, self.swl, self.tester, self.witness]:
+            summary += '%s %s\n' % (inf.label, inf.value)
+        return summary
 
 class IOStuff():
 
@@ -151,7 +180,8 @@ class IOStuff():
                 raise
 
     def issueHeaderString(self):
-        s = "ReadCount,TimeStamp,SecondsSinceStarting,LogarithmSeconds,"
+        s = info.GetSummary()
+        s += "ReadCount,TimeStamp,SecondsSinceStarting,LogarithmSeconds,"
         for ch in config.channels.Channels:
             s += "Bits_%s," % ch.name
         for ch in config.channels.Channels:
@@ -185,7 +215,7 @@ class DataReader():
         # initialize a constant for convenience
         self.iZeroChar = ord('0') # should be 48, but this looks a bit nicer
 
-    def DoOneIteration(self, initialize, curTime):
+    def DoOneIteration(self, curTime):
 
         # configure channels here, and transmit character
         numChannels = len(config.channels.Channels)
@@ -211,17 +241,19 @@ class DataReader():
             else:
                 # calculate a reading value
                 read = (ord(msb)*256) + ord(lsb)
-            if not initialize:
-                # process this by the channel itself
-                ch.Process(curTime, read)
+            # process this by the channel itself
+            ch.Process(curTime, read)
 
 class MainDataLooper():
 
-    def __init__(self, allDoneCallbackFunction, statusCallbackFunction):
+    def __init__(self, allDoneCallbackFunction, statusCallbackFunction, writeData):
 
         # initialize the callbacks based on arguments
         self.allDoneCallbackFunction = allDoneCallbackFunction
         self.statusCallbackFunction = statusCallbackFunction
+
+        # initialize the flag for whether or not we should actually write data
+        self.writeData = writeData
 
         # tell all the channels to clear themselves for a fresh start
         for ch in config.channels.Channels:
@@ -232,26 +264,17 @@ class MainDataLooper():
 
     def run(self):
 
-        # instantiate the IO class, which will help with some formatting and file I/O operations
-        io = IOStuff()
+        # set up file IO if we are actually writing data
+        if self.writeData:
 
-        # spew the header
-        io.issueHeaderString()
+            # instantiate the IO class, which will help with some formatting and file I/O operations
+            io = IOStuff()
+
+            # spew the header
+            io.issueHeaderString()
 
         # instantiate the reader, passing in the channel class instance
         reader = DataReader()
-
-        ####### this block does an initial set of samples to 'warm-up' or something the data logger
-        # initialize the starting time
-        startTime = time.time()
-        while True:
-            if self.forceStop: break
-            # use an init flag of True to 'warm-up' the data logger?
-            reader.DoOneIteration(True, 0)
-            # determine if we should be done
-            currentTime = time.time() - startTime
-            if currentTime > config.warmupTime: break
-            gobject.idle_add(self.statusCallbackFunction, 'Warming up: Current time = %s [s], Warmup ends at time = %s [s]' % (currentTime, config.warmupTime))
 
         # initialize the loop counter
         readerCount = 0
@@ -271,31 +294,128 @@ class MainDataLooper():
             times.append(str(round(currentTime, 4)))
             times.append(str(round(math.log(currentTime), 4)))
             # get the bits and processed values
-            reader.DoOneIteration(False, currentTime)
+            reader.DoOneIteration(currentTime)
             # send an update to the status callback
             gobject.idle_add(self.statusCallbackFunction, 'Sampling: Sample count = %s, Current time = %s [s]' % (readerCount, currentTime))
             # create string representations for each list (times are already strings...no need to cast)
-            io.issueReportString(times)
+            if self.writeData: io.issueReportString(times)
             # get a new time step value from the config routine
             thisTimeStep = config.getTimeStep(currentTime)
             # then pause for a moment
             time.sleep(thisTimeStep)
             # finally check the flag to see if we are done
             if not config.getContinueFlag(currentTime): break
-            #for ch in config.channels.Channels: ch.Spew()
 
         gobject.idle_add(self.statusCallbackFunction, 'Sampling Complete: Sample count = %s, Final time = %s [s]' % (readerCount, currentTime))
+
+class InputWindow(gtk.Dialog):
+
+    def __init__(self):
+        gtk.Dialog.__init__(self)
+
+        # make sure we understand we are modal so we block
+        self.set_modal(True)
+
+        # initialization
+        self.set_title("Can I have some inputs?")
+        self.set_border_width(10)
+
+        # add all the entries, to keep things obvious we aren't doing a loop or anything
+        self.entry_name = gtk.Entry()
+        self.entry_name.set_text(info.name.value)
+        hbox = gtk.HBox(spacing=6)
+        hbox.pack_start(gtk.Label(info.name.label))
+        hbox.pack_start(self.entry_name)
+        self.vbox.pack_start(hbox, False, False, 0)
+
+        self.entry_location = gtk.Entry()
+        self.entry_location.set_text(info.location.value)
+        hbox = gtk.HBox(spacing=6)
+        hbox.pack_start(gtk.Label(info.location.label))
+        hbox.pack_start(self.entry_location)
+        self.vbox.pack_start(hbox, False, False, 0)
+
+        self.entry_date = gtk.Entry()
+        self.entry_date.set_text(info.date.value)
+        hbox = gtk.HBox(spacing=6)
+        hbox.pack_start(gtk.Label(info.date.label))
+        hbox.pack_start(self.entry_date)
+        self.vbox.pack_start(hbox, False, False, 0)
+
+        self.entry_depth = gtk.Entry()
+        self.entry_depth.set_text(info.depth.value)
+        hbox = gtk.HBox(spacing=6)
+        hbox.pack_start(gtk.Label(info.depth.label))
+        hbox.pack_start(self.entry_depth)
+        self.vbox.pack_start(hbox, False, False, 0)
+
+        self.entry_diameter = gtk.Entry()
+        self.entry_diameter.set_text(info.diameter.value)
+        hbox = gtk.HBox(spacing=6)
+        hbox.pack_start(gtk.Label(info.diameter.label))
+        hbox.pack_start(self.entry_diameter)
+        self.vbox.pack_start(hbox, False, False, 0)
+
+        self.entry_loop = gtk.Entry()
+        self.entry_loop.set_text(info.loop.value)
+        hbox = gtk.HBox(spacing=6)
+        hbox.pack_start(gtk.Label(info.loop.label))
+        hbox.pack_start(self.entry_loop)
+        self.vbox.pack_start(hbox, False, False, 0)
+
+        self.entry_grout = gtk.Entry()
+        self.entry_grout.set_text(info.grout.value)
+        hbox = gtk.HBox(spacing=6)
+        hbox.pack_start(gtk.Label(info.grout.label))
+        hbox.pack_start(self.entry_grout)
+        self.vbox.pack_start(hbox, False, False, 0)
+
+        self.entry_cement = gtk.Entry()
+        self.entry_cement.set_text(info.cement.value)
+        hbox = gtk.HBox(spacing=6)
+        hbox.pack_start(gtk.Label(info.cement.label))
+        hbox.pack_start(self.entry_cement)
+        self.vbox.pack_start(hbox, False, False, 0)
+
+        self.entry_swl = gtk.Entry()
+        self.entry_swl.set_text(info.swl.value)
+        hbox = gtk.HBox(spacing=6)
+        hbox.pack_start(gtk.Label(info.swl.label))
+        hbox.pack_start(self.entry_swl)
+        self.vbox.pack_start(hbox, False, False, 0)
+
+        self.entry_tester = gtk.Entry()
+        self.entry_tester.set_text(info.tester.value)
+        hbox = gtk.HBox(spacing=6)
+        hbox.pack_start(gtk.Label(info.tester.label))
+        hbox.pack_start(self.entry_tester)
+        self.vbox.pack_start(hbox, False, False, 0)
+
+        self.entry_witness = gtk.Entry()
+        self.entry_witness.set_text(info.witness.value)
+        hbox = gtk.HBox(spacing=6)
+        hbox.pack_start(gtk.Label(info.witness.label))
+        hbox.pack_start(self.entry_witness)
+        self.vbox.pack_start(hbox, False, False, 0)
+
+        # add the response buttons here
+        self.add_button("OK", gtk.RESPONSE_OK)
+        self.add_button("Cancel", gtk.RESPONSE_CANCEL)
+
+        # show myself
+        self.show_all()
 
 class GUI(gtk.Window):
 
     def __init__(self):
         gtk.Window.__init__(self)
+        self.connect("destroy", self.onClose)
 
         # GUI layout initialization
         self.initLayout()
 
-        # set a flag saying whether something is running
-        self.threadRunning = False
+        # center it on the screen
+        self.set_position(gtk.WIN_POS_CENTER)
 
         # show the form
         self.show_all()
@@ -354,7 +474,7 @@ class GUI(gtk.Window):
         self.ax.xaxis.grid(True)
         self.ax.yaxis.grid(True)
         self.ax.plot([0],[0])
-        self.canvas.set_size_request(700,400)
+        self.canvas.set_size_request(600,400)
 
         # create the hbox to hold this tree and the snapshot plot
         hbox_plot = gtk.HBox(spacing=6)
@@ -362,18 +482,28 @@ class GUI(gtk.Window):
         hbox_plot.pack_start(self.canvas)
 
         # form buttons
-        self.btnRun = gtk.Button(label = "Start")
+        self.btnEditInfo = gtk.Button(label = "Edit Info")
+        self.btnEditInfo.connect("clicked", self.onEdit)
+        self.btnRunTest = gtk.Button(label = "Start (test)")
+        self.btnRunTest.connect("clicked", self.onRunTest)
+        self.btnRun = gtk.Button(label = "Start (write data)")
         self.btnRun.connect("clicked", self.onRun)
+        self.btnStop = gtk.Button(label = "Stop")
+        self.btnStop.connect("clicked", self.onStop)
+        self.btnStop.set_sensitive(False)
         self.btnClose = gtk.Button(stock = gtk.STOCK_CLOSE)
         self.btnClose.connect("clicked", self.onClose)
         hbox_btns = gtk.HBox(spacing=6)
+        hbox_btns.pack_start(self.btnEditInfo)
+        hbox_btns.pack_start(self.btnRunTest)
         hbox_btns.pack_start(self.btnRun)
+        hbox_btns.pack_start(self.btnStop)
         hbox_btns.pack_start(self.btnClose)
 
         # status bar
         self.sbar = gtk.Statusbar()
         self.context_id = self.sbar.get_context_id("Statusbar")
-        self.sbar.push(self.context_id, "Hey")
+        self.sbar.push(self.context_id, "Program has been initialized!")
         self.sbar.show()
         hbox_status = gtk.HBox(spacing=6)
         hbox_status.pack_start(self.sbar)
@@ -383,29 +513,73 @@ class GUI(gtk.Window):
         vbox.pack_start(hbox_plot, False, False, 0)
         vbox.pack_start(hbox_btns, False, False, 0)
         vbox.pack_start(hbox_status)
+
+        # store master container in the window
         self.add(vbox)
 
-    def startThread(self):
+    def startThread(self, writeData = True):
         # instantiate the main data acquisition class
-        self.DataAcquirer = MainDataLooper(gui.processIsComplete, gui.updateStatus)
+        self.DataAcquirer = MainDataLooper(gui.processIsComplete, gui.updateStatus, writeData)
         # start the data acquisition as a separate (background) thread
         Thread(target=self.DataAcquirer.run).start()
 
+    def onRunTest(self, widget):
+        for ch in config.channels.Channels:
+            self.ax.plot(ch.timeHistory, ch.valueHistory, label=ch.name)
+        self.startThread(writeData = False)
+        self.btnRun.set_sensitive(False)
+        self.btnRunTest.set_sensitive(False)
+        self.btnEditInfo.set_sensitive(False)
+        self.btnStop.set_sensitive(True)
+
     def onRun(self, widget):
-        if self.threadRunning:
-            self.DataAcquirer.forceStop = True
-            self.btnRun.set_label('Start')
-        else:
-            for ch in config.channels.Channels:
-                self.ax.plot(ch.timeHistory, ch.valueHistory, label=ch.name)
-            self.startThread()
-            self.btnRun.set_label('Stop')
-        self.threadRunning = not self.threadRunning
+        for ch in config.channels.Channels:
+            self.ax.plot(ch.timeHistory, ch.valueHistory, label=ch.name)
+        self.startThread()
+        self.btnRun.set_sensitive(False)
+        self.btnRunTest.set_sensitive(False)
+        self.btnEditInfo.set_sensitive(False)
+        self.btnStop.set_sensitive(True)
+
+    def onStop(self, widget):
+        self.DataAcquirer.forceStop = True
+        self.btnRun.set_sensitive(True)
+        self.btnRunTest.set_sensitive(True)
+        self.btnEditInfo.set_sensitive(True)
+        self.btnStop.set_sensitive(False)
 
     def onClose(self, widget):
         if hasattr(self, 'DataAcquirer'):
             self.DataAcquirer.forceStop = True
         gtk.main_quit()
+
+    def onEdit(self, widget):
+
+        # need to get project inputs first:
+        InputWin = InputWindow()
+
+        # this will block until the user clicks or destroys the form
+        retVal = InputWin.run()
+
+        # only continue if we surely got the OK response
+        if retVal == gtk.RESPONSE_OK:
+            # update the info class
+            info.name.set_val(InputWin.entry_name.get_text())
+            info.location.set_val(InputWin.entry_location.get_text())
+            info.date.set_val(InputWin.entry_date.get_text())
+            info.depth.set_val(InputWin.entry_depth.get_text())
+            info.diameter.set_val(InputWin.entry_diameter.get_text())
+            info.loop.set_val(InputWin.entry_loop.get_text())
+            info.grout.set_val(InputWin.entry_grout.get_text())
+            info.cement.set_val(InputWin.entry_cement.get_text())
+            info.swl.set_val(InputWin.entry_swl.get_text())
+            info.tester.set_val(InputWin.entry_tester.get_text())
+            info.witness.set_val(InputWin.entry_witness.get_text())
+            # update on the status bar
+            self.sbar.push(self.context_id, "Project information was updated!")
+
+        # of course we can destroy the window now
+        InputWin.destroy()
 
     def updateTree(self):
         bits = []
@@ -430,12 +604,18 @@ class GUI(gtk.Window):
         self.updatePlot()
 
     def processIsComplete(self):
-        print "All done"
-        self.threadRunning = False
-        self.btnRun.set_label('Start')
+        self.btnRun.set_sensitive(True)
+        self.btnRunTest.set_sensitive(True)
+        self.btnEditInfo.set_sensitive(True)
+        self.btnStop.set_sensitive(False)
+        # update on the status bar
+        self.sbar.push(self.context_id, "Data Acquisition Process Complete!")
 
 # instantiate the configuration globally, this is where most of the project-specific changes will go
 config = Configuration()
+
+# instantiate the info class
+info = InfoClass()
 
 # instantiate the GUI, it handles everything
 gui = GUI()
