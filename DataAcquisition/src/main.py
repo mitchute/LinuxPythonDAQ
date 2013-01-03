@@ -37,6 +37,8 @@ class ChannelClass():
         self.Channels.append(AChannel("HXInletTemp", self.fTemperatureIn, "[F]"))
         self.Channels.append(AChannel("HXOutletTemp", self.fTemperatureOut, "[F]"))
         self.Channels.append(AChannel("HXFlowRate", self.fFlowRate, "[GPM]"))
+        self.Channels.append(AChannel("HeaterAmps", self.fHeaterAmps, "[A]"))
+        self.Channels.append(AChannel("HeaterVolts", self.fHeaterVolts, "[V]"))
 
     def digitalToAnalog(self, bits):
         # made up conversion
@@ -54,6 +56,14 @@ class ChannelClass():
     def fFlowRate(self, volts):
         # made up empirical correlation
         return 0.9 + 0.2*volts
+
+    def fHeaterAmps(self, volts):
+        # made up empirical correlation
+        return 0.1 + 0.6*volts
+        
+    def fHeaterVolts(self, volts):
+        # made up empirical correlation
+        return 0.8 + 0.23*volts        
 
 class AChannel():
 
@@ -237,7 +247,7 @@ class DataReader():
         if not self.fakeDataSource:
             self.ser.write('!0RA' + cMaxChannel)
         # loop over all channels
-        for ch in channels.Channels:
+        for ch in reversed(channels.Channels):
             if self.fakeDataSource:
                 msb = chr(randint(18,20))
                 lsb = chr(randint(1,3))
