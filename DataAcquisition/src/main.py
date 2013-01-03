@@ -31,22 +31,20 @@ import numpy.numarray as na
 
 class AChannel():
 
-    def __init__(self, ChannelName, fProcessor):
+    def __init__(self, ChannelName, fProcessor, Units):
         self.name = ChannelName
         self.processor = fProcessor
+        self.units = Units
         self.initData()
 
     def initData(self):
-        self.timeHistory = []
-        self.rawHistory = []
-        self.voltsHistory = []
-        self.valueHistory = []
-        self.value = -9999
-        self.bits = -9999
-        self.volts = -9999
+        self.timeHistory = [float('nan')]
+        self.valueHistory = [float('nan')]
+        self.bits = float('nan')
+        self.volts = float('nan')
 
     def Process(self, time, bits):
-        if bits < 0 or bits > 20000:
+        if bits < config.minimumBits or bits > config.maximumBits:
             bits = float('nan')
             volts = float('nan')
             val = float('nan')
@@ -54,24 +52,21 @@ class AChannel():
             volts = config.channels.digitalToAnalog(bits)
             val = self.processor(volts)
         self.timeHistory.append(time)
-        self.rawHistory.append(bits)
-        self.voltsHistory.append(volts)
-        self.valueHistory.append(val)
         self.bits = bits
         self.volts = volts
-        self.value = val
+        self.valueHistory.append(val)
 
     def Spew(self):
-        print "%s: (%s, %s, %s, %s)" % (self.name, self.timeHistory[-1], self.bits, self.volts, self.value)
+        print "%s: (%s, %s, %s, %s)" % (self.name, self.timeHistory[-1], self.bits, self.volts, self.valueHistory[-1])
 
 class ChannelClass():
 
     def __init__(self):
         self.Channels = []
         # add any number of channels here
-        self.Channels.append(AChannel("HXInletTemp", self.fTemperatureIn))
-        self.Channels.append(AChannel("HXOutletTemp", self.fTemperatureOut))
-        self.Channels.append(AChannel("HXFlowRate", self.fFlowRate))
+        self.Channels.append(AChannel("HXInletTemp", self.fTemperatureIn, "[F]"))
+        self.Channels.append(AChannel("HXOutletTemp", self.fTemperatureOut, "[F]"))
+        self.Channels.append(AChannel("HXFlowRate", self.fFlowRate, "[GPM]"))
 
     def digitalToAnalog(self, bits):
         # made up conversion
@@ -88,7 +83,7 @@ class ChannelClass():
 
     def fFlowRate(self, volts):
         # made up empirical correlation
-        return 0.4 + 0.2*volts
+        return 0.9 + 0.2*volts
 
 class Configuration():
 
@@ -105,11 +100,11 @@ class Configuration():
     # 3: define the time step, in seconds
     def getTimeStep(self, currentTime):
         if currentTime < 3:
-            return 0.25
-        elif currentTime < 8:
             return 0.5
+        elif currentTime < 8:
+            return 0.8
         else:
-            return 1
+            return 2
 
     # 4: define the data acquisition flag (the time to stop taking data)
     def getContinueFlag(self, currentTime):
@@ -124,8 +119,10 @@ class Configuration():
     # 6: define the skip time at the beginning to avoid the strange initial results
     warmupTime = 2 # seconds
 
-    # 7: define the resolution of the digital converter, in mV/bit
+    # 7: define the resolution and scale of the digital converter, in mV/bit
     milliVoltsPerBit = 1
+    minimumBits = 0
+    maximumBits = 5000
 
     # for testing, you can enable this flag so it won't try to actually read data from the device
     testMode = False
@@ -160,7 +157,7 @@ class IOStuff():
         for ch in config.channels.Channels:
             s += "Volts_%s," % ch.name
         for ch in config.channels.Channels:
-            s += "Processed_%s," % ch.name
+            s += "Processed_%s%s," % (ch.name, ch.units)
         self.outFile.write(s)
         self.outFile.write("\n") # is this cross-platform?
 
@@ -168,7 +165,7 @@ class IOStuff():
         s_time = ",".join(times)
         s_bits = ",".join("%10.3f" % x.bits for x in config.channels.Channels)
         s_volts = ",".join("%10.3f" % x.volts for x in config.channels.Channels)
-        s_vals = ",".join("%10.3f" % x.value for x in config.channels.Channels)
+        s_vals = ",".join("%10.3f" % x.valueHistory[-1] for x in config.channels.Channels)
         s = ",".join([s_time, s_bits, s_volts, s_vals])
         self.outFile.write(s)
         self.outFile.write("\n") # is this cross platform?
@@ -310,14 +307,14 @@ class GUI(gtk.Window):
         self.set_border_width(10)
 
         # add snapshot reading outputs, a tree on the left and a plot on the right
-        self.liststore = gtk.ListStore(str, float, float, float)
+        self.liststore = gtk.ListStore(str, float, float, str)
 
         # create the TreeView using liststore
         self.treeview = gtk.TreeView(self.liststore)
 
         # setup a row in the liststore for each channel
         for ch in config.channels.Channels:
-            self.liststore.append([ch.name, float('nan'), float('nan'), float('nan')])
+            self.liststore.append([ch.name, float('nan'), float('nan'), ch.units])
 
         # create a channel name column
         self.tvcolumn = gtk.TreeViewColumn('Channel Name')
@@ -338,7 +335,7 @@ class GUI(gtk.Window):
         self.tvcolumn2.set_attributes(self.cell2, text=2)
 
         # create a channel analog voltage column
-        self.tvcolumn3 = gtk.TreeViewColumn('Value')
+        self.tvcolumn3 = gtk.TreeViewColumn('Value [units]')
         self.cell3 = gtk.CellRendererText()
         self.tvcolumn3.pack_start(self.cell3, True)
         self.tvcolumn3.set_attributes(self.cell3, text=3)
@@ -357,7 +354,7 @@ class GUI(gtk.Window):
         self.ax.xaxis.grid(True)
         self.ax.yaxis.grid(True)
         self.ax.plot([0],[0])
-        self.canvas.set_size_request(600,300)
+        self.canvas.set_size_request(700,400)
 
         # create the hbox to hold this tree and the snapshot plot
         hbox_plot = gtk.HBox(spacing=6)
@@ -399,12 +396,8 @@ class GUI(gtk.Window):
             self.DataAcquirer.forceStop = True
             self.btnRun.set_label('Start')
         else:
-            self.ax.clear()
             for ch in config.channels.Channels:
                 self.ax.plot(ch.timeHistory, ch.valueHistory, label=ch.name)
-            self.ax.xaxis.grid(True)
-            self.ax.yaxis.grid(True)
-            self.plt.legend()
             self.startThread()
             self.btnRun.set_label('Stop')
         self.threadRunning = not self.threadRunning
@@ -414,21 +407,26 @@ class GUI(gtk.Window):
             self.DataAcquirer.forceStop = True
         gtk.main_quit()
 
-    def updatePlot(self):
+    def updateTree(self):
         bits = []
         for ch in range(len(config.channels.Channels)):
             bits.append(config.channels.Channels[ch].bits)
             self.liststore[ch][1] = config.channels.Channels[ch].bits
             self.liststore[ch][2] = config.channels.Channels[ch].volts
-            self.liststore[ch][3] = config.channels.Channels[ch].value
+            self.liststore[ch][3] = '%s %s' % (config.channels.Channels[ch].valueHistory[-1], config.channels.Channels[ch].units)
+
+    def updatePlot(self):
+        self.ax.clear()
         for ch in config.channels.Channels:
             self.ax.plot(ch.timeHistory, ch.valueHistory, label=ch.name)
         self.ax.xaxis.grid(True)
         self.ax.yaxis.grid(True)
+        self.plt.legend(loc='upper left')
         self.canvas.draw()
 
     def updateStatus(self, msg):
         self.sbar.push(self.context_id, msg)
+        self.updateTree()
         self.updatePlot()
 
     def processIsComplete(self):
