@@ -63,15 +63,24 @@ class Configuration():
     def testMode(self):
         return True
 
+class AChannel():
+    
+    def __init__(self, ChannelName, fProcessor):
+        self.name = ChannelName
+        self.processor = fProcessor
+        
+    def Process(self, value):
+        return self.processor(value)
+        
 class ChannelClass():
 
     def __init__(self):
         self.Channels = []
         # add any number of channels here
-        self.Channels.append(["HXInletTemp", self.fTemperatureIn])
-        self.Channels.append(["HXOutletTemp", self.fTemperatureOut])
-        self.Channels.append(["HXOutletTemp3", self.fTemperatureOut])
-        self.Channels.append(["HXOutletTemp4", self.fTemperatureOut])
+        self.Channels.append(AChannel("HXInletTemp", self.fTemperatureIn))
+        self.Channels.append(AChannel("HXOutletTemp", self.fTemperatureOut))
+        self.Channels.append(AChannel("HXOutletTemp3", self.fTemperatureOut))
+        self.Channels.append(AChannel("HXOutletTemp4", self.fTemperatureOut))
 
     def fTemperatureIn(self, volts):
         # made up empirical correlation
@@ -107,9 +116,9 @@ class IOStuff():
     def issueHeaderString(self, channels):
         s = "ReadCount,TimeStamp,SecondsSinceStarting,LogarithmSeconds,"
         for ch in channels.Channels:
-            s += "Raw%s," % ch[0]
+            s += "Raw%s," % ch.name
         for ch in channels.Channels:
-            s += "Processed%s," % ch[0]
+            s += "Processed%s," % ch.name
         self.outFile.write(s)
         self.outFile.write("\n") # is this cross-platform?
 
@@ -173,7 +182,7 @@ class DataReader():
                 # store the raw value in the list
                 raw.append(read)
                 # then process it into meaningful value
-                values.append(ch[1](read))
+                values.append(ch.Process(read))
         # return whatever we got
         return raw, values
 
@@ -272,8 +281,7 @@ class GUI(gtk.Window):
 
         # setup a row in the liststore for each channel
         for ch in channels.Channels:
-            self.liststore.append([ch[0], -9999])
-            print "added channel %s to liststore " % ch[0]
+            self.liststore.append([ch.name, -9999])
 
         # create a channel name column
         self.tvcolumn = gtk.TreeViewColumn('Channel Name')
