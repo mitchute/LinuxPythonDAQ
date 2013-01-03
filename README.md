@@ -16,6 +16,7 @@ Running on Windows (I haven't tested this process yet, just guessing):
     + Install matplotlib: https://github.com/matplotlib/matplotlib/downloads/
     + Install pygtk: http://www.pygtk.org/downloads.html
 
+
 - Option 2:
     + Install the Enthought python distribution which contains python, numpy, matplotlib, et al.
     + Install pygtk: http://www.pygtk.org/downloads.html
