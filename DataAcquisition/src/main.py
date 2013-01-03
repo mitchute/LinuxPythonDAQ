@@ -9,10 +9,11 @@ import sys
 import os
 import errno
 
-# generic math and date/time based library imports
+# general math and date/time based library imports
 import math
 import time
 from datetime import datetime
+from random import randint
 
 # for serial communication, we import the python-serial library
 import serial
@@ -52,6 +53,15 @@ class Configuration():
             return True
         else:
             return False
+
+    # 5: define the portName, could be COM1, or /dev/TTYUSO0, or otherwise
+    def portName(self):
+        return '/dev/ttyUSB0'
+
+    
+    # for testing, you can enable this flag so it won't try to actually read data from the device
+    def testMode(self):
+        return True
 
 class ChannelClass():
 
@@ -118,11 +128,13 @@ class DataReader():
         # accept the argument as the instantiated channel class
         self.channels = channels
 
-        # configure the serial connections
-        self.ser = serial.Serial(port='/dev/ttyUSB0', baudrate=2400, timeout=0.025)
+        if not config.testMode(): 
+            
+            # configure the serial connections
+            self.ser = serial.Serial(port=config.portName(), baudrate=2400, timeout=0.025)
 
-        # open the serial connection
-        self.ser.open()
+            # open the serial connection
+            self.ser.open()
 
         # initialize a constant for convenience
         self.iZeroChar = ord('0') # should be 48, but this looks a bit nicer
@@ -139,12 +151,17 @@ class DataReader():
         values = []
 
         # send a transmit signal
-        self.ser.write('!0RA' + cMaxChannel)
+        if not config.testMode(): 
+            self.ser.write('!0RA' + cMaxChannel)
         # loop over all channels
         for ch in self.channels.Channels:
-            # read msb and lsb bytes
-            msb = self.ser.read(1)
-            lsb = self.ser.read(1)
+            if config.testMode():
+                msb = chr(randint(18,20))
+                lsb = chr(randint(1,3))
+            else:
+                # read msb and lsb bytes
+                msb = self.ser.read(1)
+                lsb = self.ser.read(1)
             # check for errors
             if msb == '' or lsb == '':
                 # could not receive data
@@ -238,24 +255,11 @@ class GUI(gtk.Window):
         self.set_title("Data Acquisition")
         self.set_border_width(10)
 
-        ## site selection
-        #lblSite = gtk.Label()
-        #lblSite.set_label("Choose a Mesonet Site:")
-        #meso_site_combo = gtk.ComboBox(model=meso_site_store)
-        #meso_site_combo.connect("changed", self.on_name_combo_changed)
-        #meso_site_combo.set_active(initIndex)
-        #cell = gtk.CellRendererText()
-        #meso_site_combo.pack_start(cell, True)
-        #meso_site_combo.add_attribute(cell, "text", 1)
-        #hbox_site = gtk.HBox(spacing=6)
-        #hbox_site.pack_start(lblSite)
-        #hbox_site.pack_start(meso_site_combo)
-
         # update frequency
         lblRead = gtk.Label()
         lblRead.set_label("Latest reading:")
         self.lblReadVal = gtk.Label()
-        self.lblReadVal.set_label("...Initializing...")
+        self.lblReadVal.set_label("...Initialized...")
         hbox_read = gtk.HBox(spacing=6)
         hbox_read.pack_start(lblRead)
         hbox_read.pack_start(self.lblReadVal)
@@ -266,21 +270,37 @@ class GUI(gtk.Window):
         # create the TreeView using liststore
         self.treeview = gtk.TreeView(self.liststore)
 
-        # create the TreeViewColumns to display the data
-        self.tvcolumn = gtk.TreeViewColumn('Channel Name')
-        self.tvcolumn1 = gtk.TreeViewColumn('Current Value')
-
-        # setup a row for each channel
-        for ch in channels:
+        # setup a row in the liststore for each channel
+        for ch in channels.Channels:
             self.liststore.append([ch[0], -9999])
+            print "added channel %s to liststore " % ch[0]
 
-
+        # create a channel name column
+        self.tvcolumn = gtk.TreeViewColumn('Channel Name')
+        self.cell = gtk.CellRendererText()
+        self.tvcolumn.pack_start(self.cell, True)
+        self.tvcolumn.set_attributes(self.cell, text=0)
+        
+        # create a channel value column
+        self.tvcolumn1 = gtk.TreeViewColumn('Current Value')
+        self.cell1 = gtk.CellRendererText()
+        self.tvcolumn1.pack_start(self.cell1, True)
+        self.tvcolumn1.set_attributes(self.cell1, text=1)
+        
+        # add columns to treeview
+        self.treeview.append_column(self.tvcolumn)
+        self.treeview.append_column(self.tvcolumn1)
+        
+        # create the plot and add it also
         self.fig = matplotlib.pyplot.figure()
         self.ax = self.fig.add_subplot(1,1,1)
         self.canvas = Canvas(self.fig)
         self.ax.plot([0],[0])
         self.canvas.set_size_request(600,300)
-        hbox_plot = gtk.HBox(False, 0)
+        
+        # create the hbox to hold this tree and the snapshot plot
+        hbox_plot = gtk.HBox(spacing=6)
+        hbox_plot.pack_start(self.treeview)
         hbox_plot.pack_start(self.canvas)
 
         # form buttons
@@ -321,6 +341,8 @@ class GUI(gtk.Window):
 
     def updateForm(self, latestIter, rawVals):
         self.lblReadVal.set_label("Update count = %s" % latestIter)
+        for ch in range(len(channels.Channels)):
+            self.liststore[ch][1] = rawVals[ch]
         self.ax.clear()
         self.ax.plot(rawVals)
         self.canvas.draw()
