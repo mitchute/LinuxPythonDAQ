@@ -29,73 +29,6 @@ import pylab
 import cairo
 import numpy.numarray as na
 
-class ChannelClass():
-
-    def __init__(self):
-        self.Channels = []
-        # add any number of channels here
-        self.Channels.append(AChannel("HXInletTemp", self.fTemperatureIn, "[F]"))
-        self.Channels.append(AChannel("HXOutletTemp", self.fTemperatureOut, "[F]"))
-        self.Channels.append(AChannel("HXFlowRate", self.fFlowRate, "[GPM]"))
-        self.Channels.append(AChannel("HeaterAmps", self.fHeaterAmps, "[A]"))
-        self.Channels.append(AChannel("HeaterVolts", self.fHeaterVolts, "[V]"))
-
-    def digitalToAnalog(self, bits):
-        # made up conversion
-        milliVoltPerBit = 1.2
-        return (milliVoltPerBit / 1000.0) * bits
-
-    def fTemperatureIn(self, volts):
-        # made up empirical correlation
-        return 0.2 + 0.3*volts
-
-    def fTemperatureOut(self, volts):
-        # made up empirical correlation
-        return 0.6 + 0.1*volts
-
-    def fFlowRate(self, volts):
-        # made up empirical correlation
-        return 0.9 + 0.2*volts
-
-    def fHeaterAmps(self, volts):
-        # made up empirical correlation
-        return 0.1 + 0.6*volts
-        
-    def fHeaterVolts(self, volts):
-        # made up empirical correlation
-        return 0.8 + 0.23*volts        
-
-class AChannel():
-
-    def __init__(self, ChannelName, fProcessor, Units):
-        self.name = ChannelName
-        self.processor = fProcessor
-        self.units = Units
-        self.initData()
-
-    def initData(self):
-        self.timeHistory = [float('nan')]
-        self.valueHistory = [float('nan')]
-        self.bits = float('nan')
-        self.volts = float('nan')
-
-    def Process(self, time, bits):
-        if bits < config.minimumBits or bits > config.maximumBits:
-            bits = float('nan')
-            volts = float('nan')
-            val = float('nan')
-        else:
-            volts = channels.digitalToAnalog(bits)
-            val = self.processor(volts)
-        self.timeHistory.append(time)
-        self.bits = bits
-        self.volts = volts
-        self.valueHistory.append(val)
-
-    #call this function anytime (like: for ch in channels.Channels: ch.Spew())
-    def Spew(self):
-        print "%s: (%s, %s, %s, %s)" % (self.name, self.timeHistory[-1], self.bits, self.volts, self.valueHistory[-1])
-
 class Configuration():
 
     # 0: Set up the channel class:
@@ -139,6 +72,73 @@ class Configuration():
     milliVoltsPerBit = 1  # not sure this is the right approach...
     minimumBits = 0  # just for reporting purposes to avoid plotting out-of-range data
     maximumBits = 5000  # just for reporting purposes to avoid plotting out-of-range data
+
+class ChannelClass():
+
+    def __init__(self):
+        self.Channels = []
+        # add any number of channels here
+        self.Channels.append(AChannel("HXInletTemp", self.fTemperatureIn, "[F]", plot=True))
+        self.Channels.append(AChannel("HXOutletTemp", self.fTemperatureOut, "[F]", plot=True))
+        self.Channels.append(AChannel("HXFlowRate", self.fFlowRate, "[GPM]", plot=False))
+        self.Channels.append(AChannel("HeaterAmps", self.fHeaterAmps, "[A]", plot=False))
+        self.Channels.append(AChannel("HeaterVolts", self.fHeaterVolts, "[V]", plot=False))
+        
+    def digitalToAnalog(self, bits):
+        # made up conversion
+        return (config.milliVoltsPerBit / 1000.0) * bits
+
+    def fTemperatureIn(self, volts):
+        # made up empirical correlation
+        return 0.2 + 0.3*volts
+
+    def fTemperatureOut(self, volts):
+        # made up empirical correlation
+        return 0.6 + 0.1*volts
+
+    def fFlowRate(self, volts):
+        # made up empirical correlation
+        return 0.9 + 0.2*volts
+
+    def fHeaterAmps(self, volts):
+        # made up empirical correlation
+        return 0.1 + 0.6*volts
+        
+    def fHeaterVolts(self, volts):
+        # made up empirical correlation
+        return 0.8 + 0.23*volts        
+  
+class AChannel():
+
+    def __init__(self, ChannelName, fProcessor, Units, plot):
+        self.name = ChannelName
+        self.processor = fProcessor
+        self.units = Units
+        self.plot = plot
+        self.initData()
+
+    def initData(self):
+        self.timeHistory = [float('nan')]
+        self.valueHistory = [float('nan')]
+        self.bits = float('nan')
+        self.volts = float('nan')
+
+    def Process(self, time, bits):
+        if bits < config.minimumBits or bits > config.maximumBits:
+            bits = float('nan')
+            volts = float('nan')
+            val = float('nan')
+        else:
+            volts = channels.digitalToAnalog(bits)
+            val = self.processor(volts)
+        self.timeHistory.append(time)
+        self.bits = bits
+        self.volts = volts
+        self.valueHistory.append(val)
+
+    #call this function anytime (like: for ch in channels.Channels: ch.Spew())
+    def Spew(self):
+        print "%s: (%s, %s, %s, %s)" % (self.name, self.timeHistory[-1], self.bits, self.volts, self.valueHistory[-1])
 
 class AInfo():
 
@@ -613,7 +613,8 @@ class GUI(gtk.Window):
     def updatePlot(self):
         self.ax.clear()
         for ch in channels.Channels:
-            self.ax.plot(ch.timeHistory, ch.valueHistory, label=ch.name)
+            if ch.plot:
+                self.ax.plot(ch.timeHistory, ch.valueHistory, label=ch.name)
         self.ax.xaxis.grid(True)
         self.ax.yaxis.grid(True)
         self.plt.legend(loc='upper left')
