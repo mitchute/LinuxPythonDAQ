@@ -27,6 +27,7 @@ matplotlib.use('GtkAgg')
 from matplotlib.backends.backend_gtkagg import FigureCanvasGTKAgg as Canvas
 import pylab
 import cairo
+import numpy.numarray as na
 
 class Configuration():
 
@@ -283,7 +284,7 @@ class GUI(gtk.Window):
 
         # setup a row in the liststore for each channel
         for ch in channels.Channels:
-            self.liststore.append([ch.name, -9999])
+            self.liststore.append([ch.name, -999999])
 
         # create a channel name column
         self.tvcolumn = gtk.TreeViewColumn('Channel Name')
@@ -302,10 +303,25 @@ class GUI(gtk.Window):
         self.treeview.append_column(self.tvcolumn1)
         
         # create the plot and add it also
+        labels = []
+        for ch in channels.Channels:
+            labels.append(ch.name)
+        self.plot2xlocations = na.array(range(len(labels)))+0.5
+        width = 0.35
+        
         self.fig = matplotlib.pyplot.figure()
         self.ax = self.fig.add_subplot(1,1,1)
+                
+        self.ax.xaxis.set_ticks(self.plot2xlocations+ width/2, labels)
+        #self.ax.xlim(0, xlocations[-1]+width*2)
+        self.ax.xaxis.tick_bottom()
+        
         self.canvas = Canvas(self.fig)
-        self.ax.plot([0],[0])
+        self.ax.xaxis.grid(True)
+        self.ax.yaxis.grid(True)
+        self.ax.bar(self.plot2xlocations, height=[0,1,2,3], width=width)
+        self.ax.yaxis.set_label('Current data readings')
+        #self.ax.plot([0], [0], marker='*', linestyle="None")
         self.canvas.set_size_request(600,300)
         
         # create the hbox to hold this tree and the snapshot plot
@@ -313,6 +329,19 @@ class GUI(gtk.Window):
         hbox_plot.pack_start(self.treeview)
         hbox_plot.pack_start(self.canvas)
 
+        # create the plot and add it also
+        self.fig2 = matplotlib.pyplot.figure()
+        self.ax2 = self.fig2.add_subplot(1,1,1)
+        self.canvas2 = Canvas(self.fig2)
+        self.ax2.xaxis.grid(True)
+        self.ax2.yaxis.grid(True)
+        self.ax2.plot([0],[0])
+        self.canvas2.set_size_request(800,300)
+        
+        # create the hbox to hold this tree and the snapshot plot
+        hbox_plot2 = gtk.HBox(spacing=6)
+        hbox_plot2.pack_start(self.canvas2)
+        
         # form buttons
         self.btnRun = gtk.Button(label = "Start")
         self.btnRun.connect("clicked", self.onRun)
@@ -326,6 +355,7 @@ class GUI(gtk.Window):
         vbox = gtk.VBox(spacing=6)
         vbox.pack_start(hbox_read, False, False, 0)
         vbox.pack_start(hbox_plot, False, False, 0)
+        vbox.pack_start(hbox_plot2, False, False, 0)
         vbox.pack_start(hbox_btns, False, False, 0)
         self.add(vbox)
 
@@ -356,8 +386,13 @@ class GUI(gtk.Window):
             rawVals.append(channels.Channels[ch].raw)
             self.liststore[ch][1] = channels.Channels[ch].raw
         self.ax.clear()
-        self.ax.plot(rawVals)
+        self.ax.bar(self.plot2xlocations, height=rawVals)
+        
+        #self.ax.plot(rawVals, marker='*', linestyle="None")
         self.canvas.draw()
+        for ch in channels.Channels:
+            self.ax2.plot(ch.valueHistory)
+        self.canvas2.draw()
 
     def processIsComplete(self):
         print "All done"
