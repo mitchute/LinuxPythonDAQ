@@ -68,10 +68,22 @@ class AChannel():
     def __init__(self, ChannelName, fProcessor):
         self.name = ChannelName
         self.processor = fProcessor
+        self.rawHistory = []
+        self.valueHistory = []
+        self.value = -999999
+        self.raw = -999999
         
-    def Process(self, value):
-        return self.processor(value)
-        
+    def Process(self, raw):
+        if raw == -999999:
+            val = -999999
+        else:
+            val = self.processor(raw)
+        self.rawHistory.append(raw)
+        self.valueHistory.append(val)
+        self.raw = raw
+        self.value = val
+        return val 
+                
 class ChannelClass():
 
     def __init__(self):
@@ -122,10 +134,10 @@ class IOStuff():
         self.outFile.write(s)
         self.outFile.write("\n") # is this cross-platform?
 
-    def issueReportString(self, times, raw, vals):
+    def issueReportString(self, times):
         s_time = ",".join(times)
-        s_raw = ",".join("%10.3f" % x for x in raw)
-        s_vals = ",".join("%10.3f" % x for x in vals)
+        s_raw = ",".join("%10.3f" % x.raw for x in channels.Channels)
+        s_vals = ",".join("%10.3f" % x.value for x in channels.Channels)
         s = ",".join([s_time, s_raw, s_vals])
         self.outFile.write(s)
         self.outFile.write("\n") # is this cross platform?
@@ -155,10 +167,6 @@ class DataReader():
         maxChannel = numChannels - 1 # zero-based
         cMaxChannel = chr(self.iZeroChar + maxChannel)
 
-        # clean/prepare
-        raw = []
-        values = []
-
         # send a transmit signal
         if not config.testMode(): 
             self.ser.write('!0RA' + cMaxChannel)
@@ -174,18 +182,13 @@ class DataReader():
             # check for errors
             if msb == '' or lsb == '':
                 # could not receive data
-                raw.append(-9999)
-                values.append(-9999)
+                read = -999999
             else:
                 # calculate a reading value
                 read = (ord(msb)*256) + ord(lsb)
-                # store the raw value in the list
-                raw.append(read)
-                # then process it into meaningful value
-                values.append(ch.Process(read))
-        # return whatever we got
-        return raw, values
-
+            # process this by the channel itself
+            ch.Process(read)
+                
 class MainDataLooper():
 
     def __init__(self, guiCallbackFunction, allDoneCallbackFunction):
@@ -219,8 +222,7 @@ class MainDataLooper():
 
         # infinite loop while we read and spew data
         while ContinueLooping:
-            if self.forceStop:
-                break
+            if self.forceStop: break
             readerCount += 1
             # clear and add integer count, timestamp, time-secs, log(time-secs)
             times = []
@@ -230,11 +232,11 @@ class MainDataLooper():
             times.append(str(round(currentTime, 4)))
             times.append(str(round(math.log(currentTime), 4)))
             # get the raw and processed values
-            raw, vals = reader.DoOneIteration()
+            reader.DoOneIteration()
             # send an update to the GUI callback
-            gobject.idle_add(self.guiCallbackFunction, readerCount, raw)
+            gobject.idle_add(self.guiCallbackFunction, readerCount)
             # create string representations for each list (times are already strings...no need to cast)
-            io.issueReportString(times, raw, vals)
+            io.issueReportString(times)
             # get a new time step value from the config routine
             thisTimeStep = config.getTimeStep(currentTime)
             # then pause for a moment
@@ -347,10 +349,12 @@ class GUI(gtk.Window):
             self.DataAcquirer.forceStop = True
         gtk.main_quit()
 
-    def updateForm(self, latestIter, rawVals):
+    def updateForm(self, latestIter):
         self.lblReadVal.set_label("Update count = %s" % latestIter)
+        rawVals = []
         for ch in range(len(channels.Channels)):
-            self.liststore[ch][1] = rawVals[ch]
+            rawVals.append(channels.Channels[ch].raw)
+            self.liststore[ch][1] = channels.Channels[ch].raw
         self.ax.clear()
         self.ax.plot(rawVals)
         self.canvas.draw()
