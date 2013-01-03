@@ -12,9 +12,13 @@ Running on Windows (I haven't tested this process yet, just guessing):
 
 - Option 1:
     Install a python interpreter: http://www.python.org/download/
+    Install numpy: http://scipy.org/Download
+    Install matplotlib: https://github.com/matplotlib/matplotlib/downloads/
     Install pygtk: http://www.pygtk.org/downloads.html
+
 - Option 2:
     Install the Enthought python distribution which contains python, numpy, matplotlib, et al.
+    Install pygtk: http://www.pygtk.org/downloads.html
 
 Running on Debian Linux:
 
