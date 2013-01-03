@@ -17,6 +17,8 @@ Running on Windows (I haven't tested this process yet, just guessing):
 	Install the Enthought python distribution which contains python, numpy, matplotlib, et al.
 
 Running on Debian Linux:
+
 - Install: 
+	
 	sudo apt-get install python python-matplotlib python-numpy
 
