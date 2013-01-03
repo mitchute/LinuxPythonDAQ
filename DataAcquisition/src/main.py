@@ -29,37 +29,6 @@ import pylab
 import cairo
 import numpy.numarray as na
 
-class AChannel():
-
-    def __init__(self, ChannelName, fProcessor, Units):
-        self.name = ChannelName
-        self.processor = fProcessor
-        self.units = Units
-        self.initData()
-
-    def initData(self):
-        self.timeHistory = [float('nan')]
-        self.valueHistory = [float('nan')]
-        self.bits = float('nan')
-        self.volts = float('nan')
-
-    def Process(self, time, bits):
-        if bits < config.minimumBits or bits > config.maximumBits:
-            bits = float('nan')
-            volts = float('nan')
-            val = float('nan')
-        else:
-            volts = config.channels.digitalToAnalog(bits)
-            val = self.processor(volts)
-        self.timeHistory.append(time)
-        self.bits = bits
-        self.volts = volts
-        self.valueHistory.append(val)
-
-    #call this function anytime (like: for ch in config.channels.Channels: ch.Spew())
-    def Spew(self):
-        print "%s: (%s, %s, %s, %s)" % (self.name, self.timeHistory[-1], self.bits, self.volts, self.valueHistory[-1])
-
 class ChannelClass():
 
     def __init__(self):
@@ -86,19 +55,51 @@ class ChannelClass():
         # made up empirical correlation
         return 0.9 + 0.2*volts
 
+class AChannel():
+
+    def __init__(self, ChannelName, fProcessor, Units):
+        self.name = ChannelName
+        self.processor = fProcessor
+        self.units = Units
+        self.initData()
+
+    def initData(self):
+        self.timeHistory = [float('nan')]
+        self.valueHistory = [float('nan')]
+        self.bits = float('nan')
+        self.volts = float('nan')
+
+    def Process(self, time, bits):
+        if bits < config.minimumBits or bits > config.maximumBits:
+            bits = float('nan')
+            volts = float('nan')
+            val = float('nan')
+        else:
+            volts = channels.digitalToAnalog(bits)
+            val = self.processor(volts)
+        self.timeHistory.append(time)
+        self.bits = bits
+        self.volts = volts
+        self.valueHistory.append(val)
+
+    #call this function anytime (like: for ch in channels.Channels: ch.Spew())
+    def Spew(self):
+        print "%s: (%s, %s, %s, %s)" % (self.name, self.timeHistory[-1], self.bits, self.volts, self.valueHistory[-1])
+
 class Configuration():
 
+    # 0: Set up the channel class:
+    #   a) define the channels in the ChannelClass.__init__() function
+    #   b) modify the digital to analog conversion function to give: volts=f(bits)
+    #   c) add conversion functions for each channel to give a physical value from the volts
+
     # 1: set a base directory to store the data,
-    # !*!* include a trailing separator (slash) *!*!
-    # the expanduser function is platform independent by itself, and gives the home dir
+    #   the expanduser function is platform independent by itself, and the '~' gives the home dir
     def baseDir(self):
-        return os.path.expanduser("~") + "/dataAcq/"
+        return os.path.join(os.path.expanduser("~"), "dataAcq")
 
-    # 2: setup the channels array and the correlation functions in the ChannelClass
-    # instantiate the channel class, which will create the channels.Channels array
-    channels = ChannelClass()
-
-    # 3: define the time step, in seconds
+    # 2: define the time step, in seconds as a function of the current time
+    #   this allows you to vary the sampling rate over the course of a test
     def getTimeStep(self, currentTime):
         if currentTime < 3:
             return 0.5
@@ -107,23 +108,27 @@ class Configuration():
         else:
             return 2
 
-    # 4: define the data acquisition flag (the time to stop taking data)
+    # 3: define the data acquisition flag (the time to stop taking data)
+    #   this allows you to easily stop the test after, say, 24 hours (86400s)
+    #   perhaps this could also eventually be more sophisticated to check other things
+    #   it would be easy enough to check the latest sample data for out-of-range
     def getContinueFlag(self, currentTime):
         if currentTime < 120:
             return True
         else:
             return False
 
-    # 5: define the portName, could be COM1, or /dev/TTYUSO0, or otherwise
-    portName = '/dev/ttyUSB0'
+    # 4: define the portName, these will vary based on OS
+    def getPortName(self):
+        if sys.platform.startswith('win32') or sys.platform.startswith('cygwin'):
+            return 'COM1'
+        elif sys.platform.startswith('linux'):
+            return '/dev/ttyUSB0'
 
-    # 6: define the resolution and scale of the digital converter, in mV/bit
-    milliVoltsPerBit = 1
-    minimumBits = 0
-    maximumBits = 5000
-
-    # for testing, you can enable this flag so it won't try to actually read data from the device
-    testMode = False
+    # 5: define the resolution and scale of the digital converter, in mV/bit
+    milliVoltsPerBit = 1  # not sure this is the right approach...
+    minimumBits = 0  # just for reporting purposes to avoid plotting out-of-range data
+    maximumBits = 5000  # just for reporting purposes to avoid plotting out-of-range data
 
 class AInfo():
 
@@ -166,10 +171,11 @@ class IOStuff():
         now = datetime.now()
         date = now.strftime('%Y%m%d-%H%M%S')
         sfile = "data-%s.csv" % date
+        path = os.path.join(baseDir, sfile)
         try:
-            self.outFile = open(baseDir + sfile, 'w')
+            self.outFile = open(path, 'w')
         except:
-            print "Couldn't open output file at the desired path (%s), something's wrong" % (baseDir + sfile)
+            print "Couldn't open output file at the desired path (%s), something's wrong" % (path)
             sys.exit(1)
 
     def make_sure_path_exists(self, path):
@@ -182,20 +188,20 @@ class IOStuff():
     def issueHeaderString(self):
         s = info.GetSummary()
         s += "ReadCount,TimeStamp,SecondsSinceStarting,LogarithmSeconds,"
-        for ch in config.channels.Channels:
+        for ch in channels.Channels:
             s += "Bits_%s," % ch.name
-        for ch in config.channels.Channels:
+        for ch in channels.Channels:
             s += "Volts_%s," % ch.name
-        for ch in config.channels.Channels:
+        for ch in channels.Channels:
             s += "Processed_%s%s," % (ch.name, ch.units)
         self.outFile.write(s)
         self.outFile.write("\n") # is this cross-platform?
 
     def issueReportString(self, times):
         s_time = ",".join(times)
-        s_bits = ",".join("%10.3f" % x.bits for x in config.channels.Channels)
-        s_volts = ",".join("%10.3f" % x.volts for x in config.channels.Channels)
-        s_vals = ",".join("%10.3f" % x.valueHistory[-1] for x in config.channels.Channels)
+        s_bits = ",".join("%10.3f" % x.bits for x in channels.Channels)
+        s_volts = ",".join("%10.3f" % x.volts for x in channels.Channels)
+        s_vals = ",".join("%10.3f" % x.valueHistory[-1] for x in channels.Channels)
         s = ",".join([s_time, s_bits, s_volts, s_vals])
         self.outFile.write(s)
         self.outFile.write("\n") # is this cross platform?
@@ -204,10 +210,15 @@ class DataReader():
 
     def __init__(self):
 
-        if not config.testMode:
+        # for testing, you can enable this flag so it won't try to actually read data from the device
+        #   instead it will just generate random values
+        self.fakeDataSource = False
+
+        # if we aren't faking the data, then open the serial port here
+        if not self.fakeDataSource:
 
             # configure the serial connections
-            self.ser = serial.Serial(port=config.portName, baudrate=2400, timeout=0.025)
+            self.ser = serial.Serial(port=config.getPortName(), baudrate=2400, timeout=0.025)
 
             # open the serial connection
             self.ser.open()
@@ -218,16 +229,16 @@ class DataReader():
     def DoOneIteration(self, curTime):
 
         # configure channels here, and transmit character
-        numChannels = len(config.channels.Channels)
+        numChannels = len(channels.Channels)
         maxChannel = numChannels - 1 # zero-based
         cMaxChannel = chr(self.iZeroChar + maxChannel)
 
         # send a transmit signal
-        if not config.testMode:
+        if not self.fakeDataSource:
             self.ser.write('!0RA' + cMaxChannel)
         # loop over all channels
-        for ch in config.channels.Channels:
-            if config.testMode:
+        for ch in channels.Channels:
+            if self.fakeDataSource:
                 msb = chr(randint(18,20))
                 lsb = chr(randint(1,3))
             else:
@@ -256,7 +267,7 @@ class MainDataLooper():
         self.writeData = writeData
 
         # tell all the channels to clear themselves for a fresh start
-        for ch in config.channels.Channels:
+        for ch in channels.Channels:
             ch.initData()
 
         # initialize the flag that the GUI uses to force me to stop
@@ -433,7 +444,7 @@ class GUI(gtk.Window):
         self.treeview = gtk.TreeView(self.liststore)
 
         # setup a row in the liststore for each channel
-        for ch in config.channels.Channels:
+        for ch in channels.Channels:
             self.liststore.append([ch.name, float('nan'), float('nan'), ch.units])
 
         # create a channel name column
@@ -524,7 +535,7 @@ class GUI(gtk.Window):
         Thread(target=self.DataAcquirer.run).start()
 
     def onRunTest(self, widget):
-        for ch in config.channels.Channels:
+        for ch in channels.Channels:
             self.ax.plot(ch.timeHistory, ch.valueHistory, label=ch.name)
         self.startThread(writeData = False)
         self.btnRun.set_sensitive(False)
@@ -533,7 +544,7 @@ class GUI(gtk.Window):
         self.btnStop.set_sensitive(True)
 
     def onRun(self, widget):
-        for ch in config.channels.Channels:
+        for ch in channels.Channels:
             self.ax.plot(ch.timeHistory, ch.valueHistory, label=ch.name)
         self.startThread()
         self.btnRun.set_sensitive(False)
@@ -583,15 +594,15 @@ class GUI(gtk.Window):
 
     def updateTree(self):
         bits = []
-        for ch in range(len(config.channels.Channels)):
-            bits.append(config.channels.Channels[ch].bits)
-            self.liststore[ch][1] = config.channels.Channels[ch].bits
-            self.liststore[ch][2] = config.channels.Channels[ch].volts
-            self.liststore[ch][3] = '%s %s' % (config.channels.Channels[ch].valueHistory[-1], config.channels.Channels[ch].units)
+        for ch in range(len(channels.Channels)):
+            bits.append(channels.Channels[ch].bits)
+            self.liststore[ch][1] = channels.Channels[ch].bits
+            self.liststore[ch][2] = channels.Channels[ch].volts
+            self.liststore[ch][3] = '%s %s' % (channels.Channels[ch].valueHistory[-1], channels.Channels[ch].units)
 
     def updatePlot(self):
         self.ax.clear()
-        for ch in config.channels.Channels:
+        for ch in channels.Channels:
             self.ax.plot(ch.timeHistory, ch.valueHistory, label=ch.name)
         self.ax.xaxis.grid(True)
         self.ax.yaxis.grid(True)
@@ -616,6 +627,9 @@ config = Configuration()
 
 # instantiate the info class
 info = InfoClass()
+
+# set up the channels
+channels = ChannelClass()
 
 # instantiate the GUI, it handles everything
 gui = GUI()

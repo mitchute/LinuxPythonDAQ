@@ -1,24 +1,24 @@
-This python program will sample data from a BB electronics data acquisition module 232 SDA12
+This python program will sample data from a BB electronics data acquisition module 232 SDA12 through a USB adapter.
 
-Currently set up to be used on a unix machine where the port is mounted at /dev/TTYUSB0 although this is to be generalized for cross-platform capability soon
+Should be runnable on either linux or windows (or cygwin), since it *should* select the right serial port.  Of course this assumes that you are communicating with the first port (COM1 or TTYUSB0).
 
-To run without sudo, need to add your user to the dialout group like:
-	
-	usermod -a -G dialout MY_USER_NAME   (as root, or with sudo, of course)
+To be able to run the script without sudo privileges, you need to add the user to the dialout group like:
+
+    usermod -a -G dialout MY_USER_NAME   (as root, or with sudo)
 
 ...and then log out/log in or reboot for the changes to take effect
 
 Running on Windows (I haven't tested this process yet, just guessing):
-	
+
 - Option 1:
-	Install a python interpreter: http://www.python.org/download/
-	Install pygtk: http://www.pygtk.org/downloads.html
+    Install a python interpreter: http://www.python.org/download/
+    Install pygtk: http://www.pygtk.org/downloads.html
 - Option 2:
-	Install the Enthought python distribution which contains python, numpy, matplotlib, et al.
+    Install the Enthought python distribution which contains python, numpy, matplotlib, et al.
 
 Running on Debian Linux:
 
-- Install: 
-	
-	sudo apt-get install python python-matplotlib python-numpy
+- Install:
+
+    sudo apt-get install python python-matplotlib python-numpy
 
