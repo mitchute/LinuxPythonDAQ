@@ -15,6 +15,7 @@ Running on Windows (I haven't tested this process yet, just guessing):
     - Install numpy: http://scipy.org/Download
     - Install matplotlib: https://github.com/matplotlib/matplotlib/downloads/
     - Install pygtk: http://www.pygtk.org/downloads.html
+    - Install pySerial: http://pypi.python.org/pypi/pyserial
  
 - Option 2:
     - Install the Enthought python distribution which contains python, numpy, matplotlib, et al.
@@ -24,5 +25,5 @@ Running on Debian Linux:
 
 - Install:
 
-        sudo apt-get install python python-matplotlib python-numpy
+        sudo apt-get install python python-matplotlib python-numpy python-serial
 
